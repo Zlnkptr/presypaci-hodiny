@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Přesýpací hodiny</title>
+<style>
+  :root{
+    --bg:#f4efe6; --fg:#2d2824; --muted:#8d8578;
+    --panel:#fffdf8; --border:#e2dbca;
+    --accent:#b5742a; --accent-fg:#fff;
+    --btn:#ece5d4; --btn-fg:#2d2824;
+    --danger:#a33b2e;
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161b; --fg:#e9e4d8; --muted:#8d8779;
+    --panel:#1d2026; --border:#2c3038;
+    --accent:#d99a3e; --accent-fg:#1a1205;
+    --btn:#262a32; --btn-fg:#e9e4d8;
+    --danger:#e06a5a;
+  }
+  *{ box-sizing:border-box; }
+  html{ overflow:hidden; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    overflow:hidden; transition:background .3s, color .3s;
+    -webkit-user-select:none; user-select:none;
+  }
+  header{
+    width:100%; max-width:860px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px 0;
+  }
+  header h1{ font-size:15px; font-weight:600; letter-spacing:.04em; margin:0; opacity:.75; }
+  .iconbtns{ display:flex; gap:8px; }
+  .iconbtn{
+    width:38px; height:38px; border-radius:10px;
+    border:1px solid var(--border); background:var(--panel); color:var(--fg);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background .2s, transform .1s;
+  }
+  .iconbtn:hover{ transform:translateY(-1px); }
+  .iconbtn svg{ width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .iconbtn.off{ opacity:.45; }
+
+  main{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; }
+  canvas{ display:block; }
+
+  #clockWrap{ min-height:46px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0; }
+  #clock{
+    font-variant-numeric:tabular-nums;
+    font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size:clamp(26px, 4.5vh, 40px); font-weight:600; letter-spacing:.03em;
+  }
+  #clock.hidden{ visibility:hidden; }
+  #status{ font-size:13px; color:var(--muted); min-height:17px; }
+  #status.done{ color:var(--accent); font-weight:600; animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.45} }
+
+  .controls{
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+    padding:2px 16px 12px;
+  }
+  .pickers{ display:flex; align-items:flex-end; gap:8px; }
+  .pick{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .pick label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .pick input{
+    width:62px; padding:6px 4px; text-align:center;
+    font-size:18px; font-variant-numeric:tabular-nums;
+    border:1px solid var(--border); border-radius:10px;
+    background:var(--panel); color:var(--fg);
+  }
+  .pick input:disabled{ opacity:.45; }
+  .sep{ font-size:20px; padding-bottom:9px; color:var(--muted); }
+  .buttons{ display:flex; gap:10px; }
+  .btn{
+    border:none; border-radius:12px; padding:9px 20px;
+    font-size:15px; font-weight:600; cursor:pointer;
+    background:var(--btn); color:var(--btn-fg);
+    transition:transform .1s, opacity .2s;
+  }
+  .btn:hover:not(:disabled){ transform:translateY(-1px); }
+  .btn:disabled{ opacity:.4; cursor:default; }
+  .btn.primary{ background:var(--accent); color:var(--accent-fg); }
+  .btn.ghost{ background:transparent; border:1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>PŘESÝPACÍ HODINY</h1>
+  <div class="iconbtns">
+    <button class="iconbtn" id="eyeBtn" title="Zobrazit/skrýt odpočet">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>
+    </button>
+    <button class="iconbtn" id="themeBtn" title="Světlý/tmavý režim">
+      <svg viewBox="0 0 24 24" id="themeIcon"></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <canvas id="cv"></canvas>
+  <div id="clockWrap">
+    <div id="clock">05:00</div>
+    <div id="status"></div>
+  </div>
+</main>
+
+<div class="controls">
+  <div class="pickers">
+    <div class="pick"><label for="inH">hod</label><input id="inH" type="number" min="0" max="23" value="0" inputmode="numeric"></div>
+    <div class="sep">:</div>
+    <div class="pick"><label for="inM">min</label><input id="inM" type="number" min="0" max="59" value="5" inputmode="numeric"></div>
+    <div class="sep">:</div>
+    <div class="pick"><label for="inS">sek</label><input id="inS" type="number" min="0" max="59" value="0" inputmode="numeric"></div>
+  </div>
+  <div class="buttons">
+    <button class="btn primary" id="startBtn">Spustit</button>
+    <button class="btn" id="pauseBtn" disabled>Pozastavit</button>
+    <button class="btn ghost" id="resetBtn" disabled>Reset</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ========== stav ========== */
+// 'idle' | 'running' | 'paused' | 'done'
+let state = "idle";
+let totalMs = 5 * 60 * 1000;   // nastavená délka
+let remainingMs = totalMs;     // zbývající čas (platné v paused/idle/done)
+let endTime = 0;               // absolutní čas konce (platné v running) – přežije uspání PC
+let layersDirty = false;       // statické texturové vrstvy je třeba překreslit
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const clockEl = $("clock"), statusEl = $("status");
+const inH = $("inH"), inM = $("inM"), inS = $("inS");
+const startBtn = $("startBtn"), pauseBtn = $("pauseBtn"), resetBtn = $("resetBtn");
+
+function now(){ return Date.now(); }
+
+function getRemaining(){
+  if (state === "running") return Math.max(0, endTime - now());
+  return remainingMs;
+}
+function fraction(){ // podíl písku nahoře 0..1
+  if (totalMs <= 0) return 0;
+  return Math.min(1, Math.max(0, getRemaining() / totalMs));
+}
+
+/* ========== témata ========== */
+const sunSVG  = '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/>';
+const moonSVG = '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/>';
+
+let palette = {};
+function applyTheme(t){
+  document.documentElement.setAttribute("data-theme", t);
+  try{ localStorage.setItem("hg-theme", t); }catch(e){}
+  $("themeIcon").innerHTML = (t === "dark") ? sunSVG : moonSVG;
+  const dark = t === "dark";
+  palette = dark ? {
+    sand:"#e0ab46", sandDark:"#c08a2e", sandLight:"#efc368",
+    glass:"rgba(200,195,180,.55)", glassFill:"rgba(255,255,255,.035)",
+    wood:"#7d5230", woodDark:"#53351c", shadow:"rgba(0,0,0,.45)",
+    speck:"rgba(90,60,10,.35)"
+  } : {
+    sand:"#d9a441", sandDark:"#b9832a", sandLight:"#eac066",
+    glass:"rgba(80,72,60,.5)", glassFill:"rgba(255,255,255,.22)",
+    wood:"#8a5a33", woodDark:"#5e3a1e", shadow:"rgba(80,60,30,.25)",
+    speck:"rgba(100,65,10,.3)"
+  };
+  layersDirty = true;
+}
+(function initTheme(){
+  let t = null;
+  try{ t = localStorage.getItem("hg-theme"); }catch(e){}
+  if (!t) t = (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  applyTheme(t);
+})();
+$("themeBtn").addEventListener("click", () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+});
+
+/* ========== skrývání odpočtu ========== */
+(function initEye(){
+  let show = true;
+  try{ show = localStorage.getItem("hg-clock") !== "0"; }catch(e){}
+  setClockVisible(show);
+})();
+function setClockVisible(v){
+  clockEl.classList.toggle("hidden", !v);
+  $("eyeBtn").classList.toggle("off", !v);
+  try{ localStorage.setItem("hg-clock", v ? "1" : "0"); }catch(e){}
+}
+$("eyeBtn").addEventListener("click", () => setClockVisible(clockEl.classList.contains("hidden")));
+
+/* ========== geometrie hodin ========== */
+let G = null; // geometrie, přepočítává se při resize
+function rebuildGeometry(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const cssH = Math.max(240, Math.min(vh * 0.75, vh - 225));
+  const cssW = Math.min(cssH * 0.62, vw * 0.94);
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.width  = cssW + "px";
+  cv.style.height = cssH + "px";
+  cv.width  = Math.round(cssW * dpr);
+  cv.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const cx = cssW / 2;
+  const capH = Math.max(10, cssH * 0.045);
+  const pad = 6;
+  const yTop = capH + pad + 4;
+  const yBottom = cssH - capH - pad - 10;
+  const yMid = (yTop + yBottom) / 2;
+  const R = cssW / 2 - 20;
+  const neckR = Math.max(3, cssH * 0.007);
+
+  function halfWidth(y){
+    let u;
+    if (y <= yMid) u = (yMid - y) / (yMid - yTop);
+    else u = (y - yMid) / (yBottom - yMid);
+    const t = Math.min(u / 0.9, 1);
+    const s = Math.sin(t * Math.PI / 2);
+    return neckR + (R - neckR) * Math.pow(s, 1.25);
+  }
+
+  const n = 420;
+  const dy = (yBottom - yTop) / (n - 1);
+  const ys = new Float32Array(n), hw = new Float32Array(n);
+  for (let i = 0; i < n; i++){ ys[i] = yTop + i * dy; hw[i] = halfWidth(ys[i]); }
+  let midIdx = Math.round((yMid - yTop) / dy);
+
+  // kumulativní plochy
+  const cumTop = new Float32Array(n); // plocha od y_i dolů ke krčku (horní baňka)
+  for (let i = midIdx - 1; i >= 0; i--) cumTop[i] = cumTop[i + 1] + 2 * hw[i] * dy;
+  const cumBot = new Float32Array(n); // plocha od y_i dolů ke dnu (dolní baňka)
+  for (let i = n - 2; i >= midIdx; i--) cumBot[i] = cumBot[i + 1] + 2 * hw[i] * dy;
+
+  // písek nezačíná až u okraje skla
+  const idx0 = Math.max(0, Math.round(0.13 * midIdx));
+  const sandArea = cumTop[idx0];
+
+  // stabilní "zrnitost" – pevné tečky uvnitř skla
+  const specks = [];
+  let seed = 123457;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let k = 0; k < 420; k++){
+    const i = Math.floor(rnd() * n);
+    const w = hw[i] - 3;
+    if (w <= 1) continue;
+    specks.push({ x: cx + (rnd() * 2 - 1) * w, y: ys[i], i });
+  }
+
+  G = { cssW, cssH, cx, capH, yTop, yMid, yBottom, R, neckR, n, dy, ys, hw, midIdx, cumTop, cumBot, sandArea, specks };
+  buildLayers();
+}
+window.addEventListener("resize", () => { rebuildGeometry(); });
+
+function topSurfaceIdx(area){ // nejnižší index, kde je nad krčkem aspoň `area`
+  const { cumTop, midIdx } = G;
+  if (area <= 0) return midIdx;
+  for (let i = midIdx; i >= 0; i--) if (cumTop[i] >= area) return i;
+  return 0;
+}
+function botSurfaceIdx(area){
+  const { cumBot, midIdx, n } = G;
+  if (area <= 0) return n - 1;
+  for (let i = n - 1; i >= midIdx; i--) if (cumBot[i] >= area) return i;
+  return midIdx;
+}
+
+/* ========== částice (nezávislé na odpočtu) ========== */
+const particles = [];
+let spawnAcc = 0;
+const GRAV = 1900;
+
+function spawnParticles(dt){
+  spawnAcc += dt * 80; // zrnek za sekundu
+  while (spawnAcc >= 1){
+    spawnAcc -= 1;
+    particles.push({
+      x: G.cx + (Math.random() - 0.5) * G.neckR * 1.4,
+      y: G.yMid + 1,
+      vx: (Math.random() - 0.5) * 14,
+      vy: 40 + Math.random() * 60,
+      s: 1.3 + Math.random() * 1.2,
+      c: Math.random()
+    });
+  }
+}
+function pileSurfaceAt(x, flatY, coneH){
+  const base = Math.max(coneH * 1.7, 2);
+  const d = Math.abs(x - G.cx) / base;
+  return flatY - (d < 1 ? coneH * (1 - d) : 0);
+}
+function updateParticles(dt, flatY, coneH){
+  for (let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i];
+    p.vy += GRAV * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    const land = pileSurfaceAt(p.x, flatY, coneH);
+    if (p.y >= land - 1){
+      // občasný odskok do strany – přirozený rozstřik
+      if (!p.b && Math.random() < 0.18 && p.vy > 250){
+        p.b = true;
+        p.y = land - 2;
+        p.vy = -(60 + Math.random() * 90);
+        p.vx = (Math.random() < 0.5 ? -1 : 1) * (30 + Math.random() * 60);
+      } else {
+        particles.splice(i, 1);
+      }
+    } else if (p.y > G.yBottom + 10){
+      particles.splice(i, 1);
+    }
+  }
+}
+
+/* ========== kreslení ========== */
+let dip = 0, lastT = 0;
+
+function roundRectOn(c, x0, y0, w, h, r){
+  c.beginPath();
+  c.moveTo(x0 + r, y0);
+  c.arcTo(x0 + w, y0, x0 + w, y0 + h, r);
+  c.arcTo(x0 + w, y0 + h, x0, y0 + h, r);
+  c.arcTo(x0, y0 + h, x0, y0, r);
+  c.arcTo(x0, y0, x0 + w, y0, r);
+  c.closePath();
+}
+
+/* ========== texturové vrstvy (předpočítané, animaci nezpomalují) ========== */
+function makeRng(seed){
+  let s = seed;
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
+
+let backL = null, frontL = null, glassL = null, sandPat = null;
+
+function buildLayers(){
+  if (!G) return;
+  const { cssW, cssH, cx, capH, yTop, yBottom, R, ys, hw, n } = G;
+  const dpr = window.devicePixelRatio || 1;
+
+  // opakovatelný vzorek zrnek písku (stabilní, netřepe se)
+  if (!sandPat){
+    const pc = document.createElement("canvas");
+    pc.width = pc.height = 90;
+    const p = pc.getContext("2d");
+    const rnd = makeRng(911);
+    for (let i = 0; i < 1500; i++){
+      const s = 0.9 + rnd() * 0.7, a = 0.07 + rnd() * 0.11;
+      p.fillStyle = rnd() < 0.55 ? `rgba(95,58,8,${a})` : `rgba(255,232,170,${a})`;
+      p.fillRect(rnd() * 90, rnd() * 90, s, s);
+    }
+    sandPat = ctx.createPattern(pc, "repeat");
+  }
+
+  const layer = () => {
+    const l = document.createElement("canvas");
+    l.width = Math.max(1, Math.round(cssW * dpr));
+    l.height = Math.max(1, Math.round(cssH * dpr));
+    const c = l.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return [l, c];
+  };
+
+  /* sloupky s kresbou dřeva + stín */
+  {
+    const [l, c] = layer();
+    const rnd = makeRng(777);
+    const pillar = px => {
+      c.fillStyle = palette.woodDark;
+      roundRectOn(c, px, yTop - 4, 7, yBottom - yTop + 8, 3); c.fill();
+      c.save(); roundRectOn(c, px, yTop - 4, 7, yBottom - yTop + 8, 3); c.clip();
+      for (let gx = px + 1; gx < px + 7; gx += 2.1){
+        c.strokeStyle = `rgba(30,15,3,${0.15 + rnd() * 0.15})`;
+        c.lineWidth = 0.9;
+        c.beginPath();
+        const ph = rnd() * 6;
+        for (let gy = yTop - 4; gy <= yBottom + 4; gy += 7)
+          c.lineTo(gx + Math.sin(gy * 0.045 + ph) * 0.8, gy);
+        c.stroke();
+      }
+      c.restore();
+    };
+    pillar(cx - R - 11); pillar(cx + R + 4);
+    c.fillStyle = palette.shadow;
+    c.beginPath(); c.ellipse(cx, cssH - 4, R * 0.85, 4.5, 0, 0, Math.PI * 2); c.fill();
+    backL = l;
+  }
+
+  /* patky s letokruhy a suky */
+  {
+    const [l, c] = layer();
+    const rnd = makeRng(1234);
+    const cap = b => {
+      const w = 2 * (R + 16), a0 = cx - w / 2;
+      const g = c.createLinearGradient(0, b, 0, b + capH);
+      g.addColorStop(0, palette.wood); g.addColorStop(1, palette.woodDark);
+      c.fillStyle = g;
+      roundRectOn(c, a0, b, w, capH, 6); c.fill();
+      c.save(); roundRectOn(c, a0, b, w, capH, 6); c.clip();
+      for (let gy = b + 1.5; gy < b + capH; gy += 2.4){
+        c.strokeStyle = `rgba(32,16,3,${0.12 + rnd() * 0.16})`;
+        c.lineWidth = 0.9;
+        c.beginPath();
+        const ph = rnd() * 6, amp = 0.5 + rnd() * 0.6;
+        for (let gx = a0; gx <= a0 + w; gx += 8)
+          c.lineTo(gx, gy + Math.sin(gx * 0.06 + ph) * amp);
+        c.stroke();
+      }
+      for (let k = 0; k < 2; k++){
+        const kx = a0 + 14 + rnd() * (w - 28), ky = b + 3 + rnd() * (capH - 6);
+        c.strokeStyle = "rgba(30,15,3,.3)"; c.lineWidth = 0.8;
+        for (let rr = 1.2; rr <= 3.4; rr += 1.1){
+          c.beginPath(); c.ellipse(kx, ky, rr * 1.7, rr, 0, 0, Math.PI * 2); c.stroke();
+        }
+      }
+      c.strokeStyle = "rgba(25,12,2,.35)"; c.lineWidth = 1;
+      roundRectOn(c, a0 + 0.5, b + 0.5, w - 1, capH - 1, 5.5); c.stroke();
+      c.restore();
+    };
+    cap(yTop - capH - 3);
+    cap(yBottom + 3);
+    frontL = l;
+  }
+
+  /* hloubka a odlesky skla */
+  {
+    const [l, c] = layer();
+    c.beginPath();
+    for (let i = 0; i < n; i++) c.lineTo(cx - hw[i], ys[i]);
+    for (let i = n - 1; i >= 0; i--) c.lineTo(cx + hw[i], ys[i]);
+    c.closePath();
+    c.save(); c.clip();
+    const eg = c.createLinearGradient(cx - R, 0, cx + R, 0);
+    eg.addColorStop(0, "rgba(40,30,15,.16)");
+    eg.addColorStop(0.16, "rgba(40,30,15,0)");
+    eg.addColorStop(0.84, "rgba(40,30,15,0)");
+    eg.addColorStop(1, "rgba(40,30,15,.16)");
+    c.fillStyle = eg; c.fillRect(0, 0, cssW, cssH);
+    const rg = c.createLinearGradient(cx - R * 0.75, 0, cx - R * 0.15, 0);
+    rg.addColorStop(0, "rgba(255,255,255,0)");
+    rg.addColorStop(0.5, "rgba(255,255,255,.10)");
+    rg.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = rg; c.fillRect(0, 0, cssW, cssH);
+    const rg2 = c.createLinearGradient(cx + R * 0.3, 0, cx + R * 0.45, 0);
+    rg2.addColorStop(0, "rgba(255,255,255,0)");
+    rg2.addColorStop(0.5, "rgba(255,255,255,.07)");
+    rg2.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = rg2; c.fillRect(0, 0, cssW, cssH);
+    c.restore();
+    glassL = l;
+  }
+  layersDirty = false;
+}
+
+function draw(tMs){
+  const dt = Math.min(0.05, lastT ? (tMs - lastT) / 1000 : 0.016);
+  lastT = tMs;
+
+  const f = fraction();
+  const running = state === "running";
+  const { cssW, cssH, cx, capH, yTop, yMid, yBottom, R, neckR, ys, hw, n, midIdx, sandArea, specks } = G;
+  const inset = 1.6;
+
+  if (layersDirty) buildLayers();
+  const patFill = () => { // zrnitý vzorek do právě vyplněného tvaru písku
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = sandPat;
+    ctx.fillRect(cx - R, yTop, 2 * R, yBottom - yTop);
+    ctx.restore();
+  };
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  /* --- dolní hromádka: rovná hladina + kužel --- */
+  const pileArea = (1 - f) * sandArea;
+  const coneCapH = cssH * 0.045;
+  const coneMaxArea = 1.7 * coneCapH * coneCapH;
+  const coneArea = Math.min(pileArea, coneMaxArea);
+  const flatArea = pileArea - coneArea;
+  const coneH = Math.sqrt(coneArea / 1.7);
+  const bIdx = botSurfaceIdx(flatArea);
+  const flatY = ys[bIdx];
+
+  /* --- stojan (sloupky) + stín: předpočítaná vrstva --- */
+  ctx.drawImage(backL, 0, 0, cssW, cssH);
+
+  /* --- jemné pozadí skla --- */
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) ctx.lineTo(cx - hw[i], ys[i]);
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(cx + hw[i], ys[i]);
+  ctx.closePath();
+  ctx.fillStyle = palette.glassFill;
+  ctx.fill();
+
+  /* --- horní písek --- */
+  const topTarget = f * sandArea;
+  const sIdx = topSurfaceIdx(topTarget);
+  const dipTarget = (running && f > 0.003) ? Math.min(12, Math.max(3, (hw[sIdx] - inset) * 0.55)) : 0;
+  dip += (dipTarget - dip) * Math.min(1, dt * 4);
+
+  if (topTarget > 0.5 && sIdx < midIdx){
+    ctx.beginPath();
+    const wS = Math.max(0.5, hw[sIdx] - inset);
+    ctx.moveTo(cx - wS, ys[sIdx]);
+    for (let i = sIdx; i <= midIdx; i++) ctx.lineTo(cx - Math.max(0.5, hw[i] - inset), ys[i]);
+    for (let i = midIdx; i >= sIdx; i--) ctx.lineTo(cx + Math.max(0.5, hw[i] - inset), ys[i]);
+    ctx.quadraticCurveTo(cx, ys[sIdx] + dip, cx - wS, ys[sIdx]);
+    ctx.closePath();
+    const gTop = ctx.createLinearGradient(cx - wS, 0, cx + wS, 0);
+    gTop.addColorStop(0, palette.sandDark);
+    gTop.addColorStop(0.45, palette.sand);
+    gTop.addColorStop(1, palette.sandDark);
+    ctx.fillStyle = gTop;
+    ctx.fill();
+    patFill();
+  }
+
+  /* --- dolní písek --- */
+  if (pileArea > 0.5){
+    const g = ctx.createLinearGradient(cx - R, 0, cx + R, 0);
+    g.addColorStop(0, palette.sandDark);
+    g.addColorStop(0.45, palette.sand);
+    g.addColorStop(1, palette.sandDark);
+    ctx.fillStyle = g;
+
+    if (flatArea > 0.5 && bIdx < n - 1){
+      ctx.beginPath();
+      const wB = Math.max(0.5, hw[bIdx] - inset);
+      ctx.moveTo(cx - wB, flatY);
+      for (let i = bIdx; i < n; i++) ctx.lineTo(cx - Math.max(0.5, hw[i] - inset), ys[i]);
+      for (let i = n - 1; i >= bIdx; i--) ctx.lineTo(cx + Math.max(0.5, hw[i] - inset), ys[i]);
+      ctx.closePath();
+      ctx.fill();
+      patFill();
+      ctx.fillStyle = g;
+    }
+    if (coneH > 0.6){
+      const base = Math.min(coneH * 1.7, hw[bIdx] - inset);
+      ctx.beginPath();
+      ctx.moveTo(cx - base, flatY + 0.5);
+      ctx.quadraticCurveTo(cx - base * 0.35, flatY - coneH * 0.55, cx - 1.5, flatY - coneH);
+      ctx.lineTo(cx + 1.5, flatY - coneH);
+      ctx.quadraticCurveTo(cx + base * 0.35, flatY - coneH * 0.55, cx + base, flatY + 0.5);
+      ctx.closePath();
+      ctx.fill();
+      patFill();
+    }
+  }
+
+  /* --- zrnitost (stabilní tečky uvnitř písku) --- */
+  ctx.fillStyle = palette.speck;
+  for (const sp of specks){
+    const w = hw[sp.i] - 3;
+    if (sp.i < midIdx){ // horní baňka
+      if (sp.i > sIdx + 1 && Math.abs(sp.x - cx) < w) ctx.fillRect(sp.x, sp.y, 1.4, 1.4);
+    } else {            // dolní baňka
+      if (sp.y > pileSurfaceAt(sp.x, flatY, coneH) + 1.5 && Math.abs(sp.x - cx) < w) ctx.fillRect(sp.x, sp.y, 1.4, 1.4);
+    }
+  }
+
+  /* --- proud písku + částice --- */
+  if (running && f > 0.001){
+    spawnParticles(dt);
+    const impactY = pileSurfaceAt(cx, flatY, coneH);
+    const wob = Math.sin(tMs / 90) * 0.5;
+    const grad = ctx.createLinearGradient(0, yMid, 0, impactY);
+    grad.addColorStop(0, palette.sand);
+    grad.addColorStop(1, "rgba(217,164,65,0.12)");
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = Math.max(1.2, neckR * 0.7);
+    ctx.beginPath();
+    ctx.moveTo(cx + wob, yMid - 2);
+    ctx.lineTo(cx - wob * 0.5, impactY - 1);
+    ctx.stroke();
+  }
+  updateParticles(dt, flatY, coneH);
+  for (const p of particles){
+    ctx.fillStyle = p.c < 0.33 ? palette.sandDark : (p.c < 0.66 ? palette.sand : palette.sandLight);
+    ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s);
+  }
+
+  /* --- obrys skla + odlesk --- */
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) ctx.lineTo(cx - hw[i], ys[i]);
+  ctx.moveTo(cx + hw[0], ys[0]);
+  for (let i = 0; i < n; i++) ctx.lineTo(cx + hw[i], ys[i]);
+  ctx.strokeStyle = palette.glass;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = Math.round(midIdx * 0.1); i <= Math.round(midIdx * 0.45); i++)
+    ctx.lineTo(cx - hw[i] * 0.8, ys[i]);
+  ctx.stroke();
+
+  /* --- hloubka a odlesky skla + dřevěné patky: předpočítané vrstvy --- */
+  ctx.drawImage(glassL, 0, 0, cssW, cssH);
+  ctx.drawImage(frontL, 0, 0, cssW, cssH);
+}
+
+/* ========== smyčka + hodiny ========== */
+function fmt(ms){
+  const t = Math.ceil(ms / 1000);
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function tick(tMs){
+  if (state === "running" && endTime - now() <= 0){
+    remainingMs = 0;
+    state = "done";
+    statusEl.textContent = "⌛ Čas vypršel";
+    statusEl.classList.add("done");
+    updateButtons();
+    playChime();
+  }
+  clockEl.textContent = fmt(getRemaining());
+  draw(tMs);
+  requestAnimationFrame(tick);
+}
+
+/* ========== ovládání ========== */
+function pickerMs(){
+  const h = Math.max(0, parseInt(inH.value, 10) || 0);
+  const m = Math.max(0, parseInt(inM.value, 10) || 0);
+  const s = Math.max(0, parseInt(inS.value, 10) || 0);
+  return (h * 3600 + m * 60 + s) * 1000;
+}
+function onPickerChange(){
+  if (state === "idle"){
+    totalMs = pickerMs();
+    remainingMs = totalMs;
+  }
+}
+[inH, inM, inS].forEach(el => el.addEventListener("input", onPickerChange));
+
+function updateButtons(){
+  const idle = state === "idle", running = state === "running",
+        paused = state === "paused", done = state === "done";
+  startBtn.textContent = done ? "Spustit znovu" : "Spustit";
+  startBtn.disabled = running || paused;
+  pauseBtn.textContent = paused ? "Pokračovat" : "Pozastavit";
+  pauseBtn.disabled = !(running || paused);
+  resetBtn.disabled = idle;
+  [inH, inM, inS].forEach(el => el.disabled = !idle);
+  if (!done){ statusEl.textContent = paused ? "Pozastaveno" : ""; statusEl.classList.remove("done"); }
+}
+
+startBtn.addEventListener("click", () => {
+  if (state !== "idle" && state !== "done") return;
+  if (state === "idle"){ totalMs = pickerMs(); }
+  if (totalMs <= 0){
+    statusEl.textContent = "Nastavte čas větší než 0";
+    return;
+  }
+  remainingMs = totalMs;
+  endTime = now() + remainingMs;
+  state = "running";
+  particles.length = 0;
+  updateButtons();
+});
+
+pauseBtn.addEventListener("click", () => {
+  if (state === "running"){
+    remainingMs = Math.max(0, endTime - now());
+    state = "paused";
+  } else if (state === "paused"){
+    endTime = now() + remainingMs;
+    state = "running";
+  }
+  updateButtons();
+});
+
+resetBtn.addEventListener("click", () => {
+  state = "idle";
+  totalMs = pickerMs();
+  remainingMs = totalMs;
+  particles.length = 0;
+  updateButtons();
+});
+
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && document.activeElement.tagName !== "INPUT"){
+    e.preventDefault();
+    if (state === "running" || state === "paused") pauseBtn.click();
+    else startBtn.click();
+  }
+});
+
+/* ========== zvonek na konci (dva údery, kovové alikvóty) ========== */
+function playChime(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    const strike = t0 => {
+      [[440, 0.16], [1214, 0.09], [2376, 0.05], [3916, 0.025]].forEach(([f, v]) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = "sine";
+        const start = ac.currentTime + t0;
+        o.frequency.setValueAtTime(f, start);
+        o.frequency.exponentialRampToValueAtTime(f * 0.995, start + 1.9);
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(v, start + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + 1.9);
+        o.connect(g).connect(ac.destination);
+        o.start(start);
+        o.stop(start + 2);
+      });
+    };
+    strike(0);
+    strike(0.7);
+  }catch(e){}
+}
+
+/* ========== start ========== */
+rebuildGeometry();
+onPickerChange();
+updateButtons();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
